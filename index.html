@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Names in World: find your house</title>
+<meta name="description" content="A 3D island where every person who comments gets a house and a number that never changes. Comment house to join.">
+<meta property="og:title" content="Names in World">
+<meta property="og:description" content="Comment house. Get a house and a number that never changes.">
+<meta property="og:image" content="map.jpg">
+<link rel="modulepreload" href="vendor/three/build/three.module.js">
+<script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}</script>
+<style>
+@font-face { font-family: Italiana; src: url(fonts/Italiana-Regular.ttf); font-display: swap; }
+@font-face { font-family: "DM Mono"; src: url(fonts/DMMono-Regular.ttf); font-display: swap; }
+:root { --bg: #05080f; --panel: #0d1320; --line: #232b3d; --text: #eef0f4; --dim: #9aa3b5; --amber: #f2b15c; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.mono { font: 12px/1.4 "DM Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+#stage { position: relative; height: 80vh; height: 80svh; min-height: 420px; overflow: hidden; background: #070c18; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+#stage.flat #still { display: block; }
+#stage.flat #gl, #stage.flat #hint { display: none; }
+#stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(5, 8, 15, .62) 0, transparent 30%, transparent 72%, var(--bg) 100%); }
+#hud { position: absolute; z-index: 2; top: 0; left: 0; right: 0; padding: 26px 16px 0; pointer-events: none; max-width: 760px; margin: 0 auto; }
+h1 { font: 400 clamp(42px, 11vw, 72px)/1 Italiana, serif; margin: 8px 0 0; }
+h1 em, h2 em { font-style: normal; color: var(--amber); }
+h2 { font: 400 30px/1.15 Italiana, serif; margin: 0 0 10px; }
+#status { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+#labels { position: absolute; z-index: 1; inset: 0; overflow: hidden; pointer-events: none; }
+.label { position: absolute; left: 0; top: 0; display: none; max-width: 170px; padding: 3px 8px; border-radius: 4px; background: rgba(5, 8, 15, .78); font: 11px/1.35 "DM Mono", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; will-change: transform; color: var(--amber); }
+.label.open { color: var(--dim); background: rgba(5, 8, 15, .5); }
+#tag { position: absolute; z-index: 2; left: 50%; bottom: 44px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 6px; background: rgba(5, 8, 15, .9); border: 1px solid var(--line); font: 14px/1.4 "DM Mono", monospace; overflow-wrap: anywhere; text-align: center; }
+#tag:empty { display: none; }
+#hint { position: absolute; z-index: 2; left: 0; right: 0; bottom: 14px; text-align: center; pointer-events: none; }
+main { max-width: 760px; margin: 0 auto; padding: 8px 16px 56px; }
+section { margin-top: 18px; padding: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+ol { margin: 0; padding-left: 22px; }
+ol li + li { margin-top: 6px; }
+label { display: block; margin-bottom: 8px; color: var(--dim); }
+input { width: 100%; min-height: 46px; padding: 10px 12px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: 16px "DM Mono", monospace; }
+input:focus { outline: 2px solid var(--amber); outline-offset: 1px; }
+#found { min-height: 24px; margin: 10px 0 0; overflow-wrap: anywhere; }
+#list { margin: 12px 0 0; padding: 0; list-style: none; columns: 2; column-gap: 18px; }
+#list li { margin: 0 0 2px; break-inside: avoid; }
+#list button { width: 100%; min-height: 34px; padding: 4px 0; border: 0; background: none; color: var(--text); font: 14px/1.5 "DM Mono", monospace; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+#list button:hover { color: var(--amber); }
+#list button:focus-visible { outline: 2px solid var(--amber); }
+#list b { font-weight: 400; color: var(--amber); }
+.fine { margin: 0; font-size: 14px; color: var(--dim); }
+.fine + .fine { margin-top: 8px; }
+@media (max-width: 480px) { #list { columns: 1; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" aria-label="3D view of a night island with a lighthouse in the middle and houses along winding paths. Drag to look around, tap a house to fly to it."></canvas>
+  <img id="still" src="map.jpg" alt="Night view from above of a small island with a lighthouse and houses." loading="lazy">
+  <div id="labels"></div>
+  <div id="hud">
+    <div class="mono" id="pop">Population 0</div>
+    <h1>Names in <em>World</em></h1>
+  </div>
+  <div class="mono" id="status" role="status">Lighting the island</div>
+  <div id="tag" aria-live="polite"></div>
+  <div class="mono" id="hint">Drag to look around. Tap a house.</div>
+</div>
+<main>
+  <section>
+    <h2>Want a <em>house?</em></h2>
+    <ol>
+      <li>Find <b>@names_in_world</b> on Instagram, TikTok or YouTube.</li>
+      <li>Comment <b>house</b> under any video, any time.</li>
+      <li>Within 24 hours your window lights up on this island, with your number.</li>
+    </ol>
+  </section>
+
+  <section>
+    <label for="q">Already commented? Find your house</label>
+    <input id="q" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="your username">
+    <p id="found" aria-live="polite"></p>
+    <ul id="list"></ul>
+  </section>
+
+  <section>
+    <h2>The <em>rules</em></h2>
+    <p class="fine">First comment gets the lowest number, and your number never changes. One house per account. 16+ only.</p>
+    <p class="fine">We show your account's username as it is, and we read every name before it goes up. Offensive names stay off the island.</p>
+    <p class="fine">Want out? Comment <b>remove</b> or message @names_in_world. Your name comes off this island within 24 hours and stays out of future videos. The number is retired, nobody else gets it.</p>
+    <p class="fine">This page has no cookies and no tracking.</p>
+  </section>
+</main>
+<script type="module" src="world3d.js"></script>
+</body>
+</html>
